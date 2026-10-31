@@ -1,4 +1,4 @@
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, isNotNull } from 'drizzle-orm';
 import { z } from 'zod';
 import { schema, withSystemTx, withTenantTx } from '@/lib/db';
 import { audit } from '@/lib/audit';
@@ -6,6 +6,7 @@ import { enforce } from '@/lib/policy/enforce';
 import { isEmployee } from '@/lib/policy/authorize';
 import { badRequest, notFound } from '@/lib/http';
 import type { Principal } from '@/lib/policy/types';
+import { scanSensitive } from '@/lib/scan';
 
 export const SIMULATED_LABEL = 'Simulated · synthetic data · not a credit or business decision';
 
@@ -171,4 +172,62 @@ export async function listRuns(principal: Principal | null, context: 'employee' 
   else await enforce(principal, 'read', { type: 'sandbox', audience: principal?.activeTenantId ? { kind: 'tenant', tenantId: principal.activeTenantId } : null });
   const tenantId = context === 'employee' ? null : principal!.activeTenantId;
   return withTenantTx(principal!.userId, tenantId, (tx) => tx.select().from(schema.playgroundRuns).orderBy(desc(schema.playgroundRuns.createdAt)).limit(10));
+}
+
+// ───────── Sandbox feedback for product owners (EMP feedback loop) ─────────
+
+export type FeedbackComment = { source: 'Client' | 'Employee'; text: string | null; withheld: boolean; at: string };
+export type ScenarioFeedback = {
+  offeringName: string;
+  scenarioId: string;
+  scenarioName: string;
+  responses: number;
+  useful: { yes: number; partly: number; no: number };
+  avgClarity: number | null;
+  comments: FeedbackComment[];
+};
+
+const ownerResource = { type: 'sandbox_feedback', audience: { kind: 'grant' as const, grant: 'product_owner' as const } };
+
+/**
+ * Aggregated sandbox/Playground feedback per offering + scenario for product owners.
+ * No user, organisation or run identifiers leave this function; comments that look sensitive are withheld.
+ */
+export async function sandboxFeedbackSummary(principal: Principal | null): Promise<ScenarioFeedback[]> {
+  await enforce(principal, 'manage_idea', ownerResource);
+  const rows = await withSystemTx((tx) =>
+    tx
+      .select({ offeringId: schema.playgroundRuns.offeringId, scenarioId: schema.playgroundRuns.scenarioId, tenantId: schema.playgroundRuns.tenantId, feedback: schema.playgroundRuns.feedback, createdAt: schema.playgroundRuns.createdAt })
+      .from(schema.playgroundRuns)
+      .where(isNotNull(schema.playgroundRuns.feedback))
+      .orderBy(desc(schema.playgroundRuns.createdAt)),
+  );
+  const offerings = await withSystemTx((tx) => tx.select({ id: schema.offerings.id, name: schema.offerings.name }).from(schema.offerings));
+  const offeringName = new Map(offerings.map((o) => [o.id, o.name]));
+  const groups = new Map<string, ScenarioFeedback & { clarityTotal: number }>();
+  for (const r of rows) {
+    const fb = r.feedback as { useful?: 'yes' | 'partly' | 'no'; clarity?: number; comment?: string } | null;
+    if (!fb) continue;
+    const key = `${r.offeringId}:${r.scenarioId}`;
+    let g = groups.get(key);
+    if (!g) {
+      g = {
+        offeringName: offeringName.get(r.offeringId) ?? 'Unknown offering', scenarioId: r.scenarioId,
+        scenarioName: SCENARIOS.find((x) => x.id === r.scenarioId)?.name ?? r.scenarioId,
+        responses: 0, useful: { yes: 0, partly: 0, no: 0 }, avgClarity: null, comments: [], clarityTotal: 0,
+      };
+      groups.set(key, g);
+    }
+    g.responses += 1;
+    if (fb.useful) g.useful[fb.useful] += 1;
+    if (typeof fb.clarity === 'number') g.clarityTotal += fb.clarity;
+    const text = fb.comment?.trim();
+    if (text && g.comments.length < 8) {
+      const withheld = scanSensitive({ title: '', body: text }).length > 0;
+      g.comments.push({ source: r.tenantId ? 'Client' : 'Employee', text: withheld ? null : text, withheld, at: r.createdAt.toISOString() });
+    }
+  }
+  return [...groups.values()]
+    .map(({ clarityTotal, ...g }) => ({ ...g, avgClarity: g.responses ? Math.round((clarityTotal / g.responses) * 10) / 10 : null }))
+    .sort((a, b) => b.responses - a.responses);
 }

@@ -15,9 +15,16 @@ export default async function Demos() {
       <section className="mt-8">
         <h2 className="text-lg font-semibold">Your recent runs</h2>
         {r.data.runs.length === 0 ? <p className="mt-2 text-sm text-ink-3">No runs yet.</p> : (
-          <ul className="mt-3 space-y-2">{r.data.runs.map((run) => <li key={run.id} className="panel-deep flex justify-between p-3 text-sm"><span>{run.scenarioId} · {(run.outputs as { signal?: string }).signal}</span><span className="font-mono text-xs text-muted">{fmtDateTime(run.createdAt)}</span></li>)}</ul>
+          <ul className="mt-3 space-y-2">{r.data.runs.map((run) => <li key={run.id} className="panel-deep flex justify-between p-3 text-sm"><span>{run.scenarioId} · {(run.outputs as { signal?: string }).signal}{feedbackLabel(run.feedback)}</span><span className="font-mono text-xs text-muted">{fmtDateTime(run.createdAt)}</span></li>)}</ul>
         )}
       </section>
     </>
   );
+}
+
+/** The client's own feedback on a run, shown back to them. */
+function feedbackLabel(fb: unknown) {
+  const f = fb as { useful?: string; clarity?: number } | null;
+  if (!f?.useful) return '';
+  return ` · your feedback: ${f.useful === 'yes' ? 'useful' : f.useful === 'partly' ? 'partly useful' : 'not useful'}, clarity ${f.clarity}/5`;
 }

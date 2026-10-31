@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { PageHeader, fmtDate } from '@/components/ui';
 import { IdeaCreate } from '@/components/ideas/IdeaCreate';
 import { PrioritisationPanel } from '@/components/assist/PrioritisationPanel';
+import { SandboxFeedbackPanel } from '@/components/playground/SandboxFeedbackPanel';
 import { requirePrincipal } from '@/lib/page';
 import { listIdeasForEmployee, listLinkableEvidence } from '@/lib/services/ideas';
 import { allOfferings } from '@/lib/services/workspace';
@@ -26,6 +27,7 @@ export default async function HubIdeas() {
         ))}
       </ul>
       {isOwner && <PrioritisationPanel principal={p} />}
+      {isOwner && <SandboxFeedbackPanel principal={p} />}
     </>
   );
 }
