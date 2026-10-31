@@ -3,14 +3,21 @@ import { useState } from 'react';
 import { api, errorText } from '@/lib/client';
 
 export function EventForm({ slug, full }: { slug: string; full: boolean }) {
-  const [done, setDone] = useState<{ confirmation: string; duplicate: boolean } | null>(null);
+  const [done, setDone] = useState<{ status: 'registered' | 'waitlisted' | 'already_registered'; confirmation: string | null } | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   if (done)
     return (
       <div className="panel-solid p-8" role="status">
-        <h2 className="text-2xl font-semibold">{done.duplicate ? 'You’re already registered.' : 'You’re registered!'}</h2>
-        <p className="mt-2 text-ink-2">Confirmation <span className="font-mono text-teal">{done.confirmation}</span>. A confirmation email is queued.</p>
+        <h2 className="text-2xl font-semibold">{done.status === 'registered' ? 'You’re registered!' : done.status === 'waitlisted' ? 'You’re on the waitlist.' : 'Check your inbox.'}</h2>
+        {done.status === 'already_registered' ? (
+          <p className="mt-2 text-ink-2">This email address is already signed up. We’ve sent the confirmation to it again; it includes a link to cancel.</p>
+        ) : (
+          <p className="mt-2 text-ink-2">
+            Confirmation <span className="font-mono text-teal">{done.confirmation}</span>.{' '}
+            {done.status === 'waitlisted' ? 'The event is full. If a place opens up, you’ll move up automatically and we’ll email you.' : 'A confirmation email is on its way, with a link to cancel if your plans change.'}
+          </p>
+        )}
       </div>
     );
   return (
@@ -35,7 +42,7 @@ export function EventForm({ slug, full }: { slug: string; full: boolean }) {
       <div><label className="label" htmlFor="ev-team">Team name (optional)</label><input id="ev-team" name="team" className="input" /></div>
       <div className="hidden" aria-hidden><input name="website" tabIndex={-1} autoComplete="off" /></div>
       {err && <p className="error" role="alert">{err}</p>}
-      <button className="btn btn-primary w-fit" disabled={busy || full}>{full ? 'Event full' : busy ? 'Registering…' : 'Register interest'}</button>
+      <button className="btn btn-primary w-fit" disabled={busy}>{busy ? 'Registering…' : full ? 'Join the waitlist' : 'Register interest'}</button>
     </form>
   );
 }

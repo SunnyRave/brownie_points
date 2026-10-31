@@ -117,6 +117,8 @@ Each feature has its own service in `lib/services/` (or `lib/federated/`, `lib/i
 | Duplicates and clusters (§10) | `/moderate/assist`; panel on each review | Lexical similarity (TF-IDF plus title trigrams), **not semantic embeddings**. Only compares published shared copies and the queue moderators can already see, so drafts, private and org-only records are never read. Same-org repeats are flagged as yes/no only. |
 | Trend-change summaries (§10) | Community theme dashboard | A direction is given only when the theme and every compared window have 0 or at least k organisations. Otherwise: "insufficient evidence". |
 | Assisted prioritisation (§10) | `/hub/ideas` (product owners) | A transparent score broken down by factor, for themes with at least k organisations only. Labelled "assistive — not a decision". |
+| Demo requests and hackathon registrations (§01) | Visitors: `/demo`, `/hackathon`. Admins: Admin → Enquiries | Hackathon: waitlist when full, automatic promotion with an email, a signed cancel link in the confirmation email (opening it changes nothing; a button press cancels). A repeat email re-sends the confirmation instead of showing it. Contact details are visible to portal admins only, protected by RLS, and status changes are audited. |
+| Sandbox feedback loop (§05) | `/hub/ideas` (product owners) | Feedback grouped by product and scenario, with no names or organisations. Comments that look sensitive are withheld. Users see their own feedback on each run. |
 | Federated learning, P2 (§11) | `/hub/federated`; opt-in on `/w/[org]/team`; `npm run fl:demo` | Separate programme consent. Local training per isolated synthetic dataset. Signed updates are validated, clipped and checked for poisoning; a minimum cohort of 3 is required; aggregation is weighted FedAvg. Results are evaluated on a separate holdout against baselines. Every model is a candidate until a human decides; rollback is supported. Secure aggregation and formal DP are **not** implemented, and the UI says so. See [docs/FEDERATED.md](docs/FEDERATED.md). |
 
 ## Policies to document for production
@@ -146,7 +148,7 @@ Each feature has its own service in `lib/services/` (or `lib/federated/`, `lib/i
 ## Tests
 
 ```bash
-npm test                                         # 118 unit + DB security tests (in-memory Postgres with RLS)
+npm test                                         # 132 unit + DB security tests (in-memory Postgres with RLS)
 npm run build && npm start                       # then, in another terminal:
 E2E_BASE_URL=http://localhost:3000 npm run test:api   # 8 HTTP tests: real magic-link login, CSRF, forged tenants, headers
 npm run test:ui                                  # Playwright (system Chrome): AT-21 + full UI demo flow

@@ -409,7 +409,10 @@ export const leads = pgTable('leads', {
   offeringInterest: text('offering_interest'),
   message: text('message'),
   consent: boolean('consent').notNull(),
+  status: text('status', { enum: ['new', 'contacted', 'closed'] }).notNull().default('new'),
+  handledBy: text('handled_by'),
   createdAt: createdAt(),
+  updatedAt: updatedAt(),
 });
 
 export const events = pgTable('events', {
@@ -429,6 +432,8 @@ export const eventRegistrations = pgTable(
     name: text('name').notNull(),
     email: text('email').notNull(),
     team: text('team'),
+    status: text('status', { enum: ['registered', 'waitlisted', 'cancelled'] }).notNull().default('registered'),
+    cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
     createdAt: createdAt(),
   },
   (t) => [uniqueIndex('event_registrations_unique').on(t.eventId, t.email)],
