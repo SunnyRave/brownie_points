@@ -11,6 +11,7 @@ export function AiraPanel({ scopeLabel, suggestions }: { scopeLabel: string; sug
   const [q, setQ] = useState('');
   const [answer, setAnswer] = useState('');
   const [citations, setCitations] = useState<Citation[]>([]);
+  const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const abort = useRef<AbortController | null>(null);
 
@@ -21,6 +22,7 @@ export function AiraPanel({ scopeLabel, suggestions }: { scopeLabel: string; sug
     setBusy(true);
     setAnswer('');
     setCitations([]);
+    setNotice(null);
     try {
       const res = await fetch('/api/aira', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ question }), signal: abort.current.signal });
       if (!res.ok || !res.body) throw new Error();
@@ -38,6 +40,7 @@ export function AiraPanel({ scopeLabel, suggestions }: { scopeLabel: string; sug
           const ev = JSON.parse(line);
           if (ev.type === 'text') setAnswer((a) => a + ev.text);
           if (ev.type === 'citations') setCitations(ev.citations);
+          if (ev.type === 'notice') setNotice(ev.text);
         }
       }
     } catch {
@@ -51,7 +54,8 @@ export function AiraPanel({ scopeLabel, suggestions }: { scopeLabel: string; sug
     <div className="flex h-full flex-col">
       <p className="font-mono text-[11px] text-muted">Searching: {scopeLabel}</p>
       <div className="mt-3 min-h-[120px] flex-1 rounded-2xl bg-surface-deep p-4 text-sm leading-relaxed" aria-live="polite">
-        {answer ? <span className={busy ? 'caret' : ''}>{answer}</span> : busy ? <span className="caret text-muted">Thinking</span> : <span className="text-muted">Ask about offerings, approved insights or themes. Answers cite approved sources only.</span>}
+        {notice && <p className="chip mb-2 border-amber/40 text-amber">{notice}</p>}
+        {answer ? <span className={busy ? 'caret' : ''}>{answer}</span> : busy ? <span className="caret text-muted">Thinking</span> : <span className="text-muted">Ask about offerings, approved insights or themes — answers cite approved sources. Or ask how to use the portal.</span>}
         <AnimatePresence>
           {citations.length > 0 && (
             <motion.ul initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="mt-3 flex flex-wrap gap-2">
