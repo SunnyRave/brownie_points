@@ -1,5 +1,6 @@
 import { eq, and, lt } from 'drizzle-orm';
 import { schema, withSystemTx, type Tx } from '@/lib/db';
+import { DEMO_USERS } from '@/scripts/seed-data';
 
 /**
  * In-app notification + persisted outbox record in the caller's transaction.
@@ -38,6 +39,11 @@ export async function processEmailOutbox(limit = 20) {
     const p = item.payload as { subject: string; text: string };
     let status: 'sent' | 'queued' | 'failed' = 'queued';
     let lastError: string | null = null;
+    if (isSyntheticRecipient(item.recipient)) {
+      // Seeded personas are fictional; some use a real company domain, so never hand them to a provider.
+      await withSystemTx((tx) => tx.update(schema.outbox).set({ status: 'failed', lastError: 'synthetic demo address: not sent', updatedAt: new Date() }).where(eq(schema.outbox.id, item.id)));
+      continue;
+    }
     try {
       const res = await fetch('https://api.resend.com/emails', {
         method: 'POST',
@@ -55,4 +61,19 @@ export async function processEmailOutbox(limit = 20) {
     );
   }
   return { processed: queued.length, provider: true };
+}
+
+const SYNTHETIC = new Set<string>(Object.values(DEMO_USERS));
+/** Fictional seeded identities (.example TLD, demo personas, seeded background analysts). */
+export function isSyntheticRecipient(email: string) {
+  const e = email.toLowerCase();
+  return SYNTHETIC.has(e) || e.endsWith('.example');
+}
+
+let draining: Promise<unknown> | null = null;
+/** Fire-and-forget send of queued emails; concurrent calls share one run. */
+export function kickEmailOutbox() {
+  if (!emailProviderConfigured() || draining) return draining;
+  draining = processEmailOutbox().catch((err) => console.error('email outbox', err)).finally(() => { draining = null; });
+  return draining;
 }
