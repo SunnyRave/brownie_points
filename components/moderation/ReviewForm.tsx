@@ -2,7 +2,7 @@
 import { useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
 import { api, errorText } from '@/lib/client';
-import { TOPICS } from '@/lib/validation';
+import { EVIDENCE_QUALITY, EVIDENCE_QUALITY_LABELS, TOPICS } from '@/lib/validation';
 import type { SensitiveFlag } from '@/lib/db/schema';
 
 type Item = {
@@ -51,6 +51,7 @@ export function ReviewForm({ id, item }: { id: string; item: Item }) {
   const [s, setS] = useState({ ...item.suggestion, showAttribution: false });
   const [reason, setReason] = useState('');
   const [note, setNote] = useState('');
+  const [quality, setQuality] = useState<(typeof EVIDENCE_QUALITY)[number] | ''>('');
   const [category, setCategory] = useState<'duplicate' | 'unsafe' | 'out_of_scope'>('duplicate');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -63,7 +64,7 @@ export function ReviewForm({ id, item }: { id: string; item: Item }) {
     try {
       const body =
         decision === 'approve'
-          ? { decision, authorReason: reason || 'Approved with identifying details generalised.', internalNote: note || undefined, shared: { title: s.title, body: s.body, regionGeneralised: s.regionGeneralised || null, periodQuarter: s.periodQuarter || null, topic: s.topic || null, showAttribution: s.showAttribution, themeId: s.themeId || null } }
+          ? { decision, authorReason: reason || 'Approved with identifying details generalised.', internalNote: note || undefined, evidenceQuality: quality || null, shared: { title: s.title, body: s.body, regionGeneralised: s.regionGeneralised || null, periodQuarter: s.periodQuarter || null, topic: s.topic || null, showAttribution: s.showAttribution, themeId: s.themeId || null } }
           : decision === 'reject' ? { decision, category, authorReason: reason, internalNote: note || undefined } : { decision, authorReason: reason, internalNote: note || undefined };
       await api(`/api/moderation/${id}`, { body });
       router.push('/moderate');
@@ -100,6 +101,14 @@ export function ReviewForm({ id, item }: { id: string; item: Item }) {
               <div><label className="label" htmlFor="s-period">Period (quarter)</label><input id="s-period" className="input" value={s.periodQuarter ?? ''} onChange={(e) => setS({ ...s, periodQuarter: e.target.value })} /></div>
               <div><label className="label" htmlFor="s-topic">Topic</label><select id="s-topic" className="select" value={s.topic ?? ''} onChange={(e) => setS({ ...s, topic: e.target.value || null })}><option value="">—</option>{TOPICS.map((t) => <option key={t}>{t}</option>)}</select></div>
               <div><label className="label" htmlFor="s-theme">Theme {item.suggestion.themeId && <span className="text-teal">(suggested)</span>}</label><select id="s-theme" className="select" value={s.themeId ?? ''} onChange={(e) => setS({ ...s, themeId: e.target.value || null })}><option value="">No theme</option>{item.themes.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</select></div>
+            </div>
+            <div>
+              <label className="label" htmlFor="s-quality">Evidence quality (reviewer-assessed, shown on the shared card)</label>
+              <select id="s-quality" className="select" value={quality} onChange={(e) => setQuality(e.target.value as typeof quality)}>
+                <option value="">Not assessed</option>
+                {EVIDENCE_QUALITY.map((q) => <option key={q} value={q}>{EVIDENCE_QUALITY_LABELS[q]}</option>)}
+              </select>
+              <p className="mt-1 text-xs text-ink-3">Judge the evidence described (e.g. portfolio review vs anecdote), not how popular the topic is.{item.original.evidenceType ? ` Author’s evidence type: ${item.original.evidenceType}.` : ''}</p>
             </div>
             <label className={`flex items-center gap-3 text-sm ${!item.consent?.attribution ? 'opacity-50' : ''}`}>
               <input type="checkbox" disabled={!item.consent?.attribution} checked={s.showAttribution} onChange={(e) => setS({ ...s, showAttribution: e.target.checked })} className="h-5 w-5 accent-[var(--coral)]" />

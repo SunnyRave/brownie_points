@@ -12,9 +12,10 @@ export type Action =
   | 'read' | 'create' | 'update' | 'delete'
   | 'submit' | 'moderate' | 'publish' | 'withdraw' | 'report'
   | 'invite_member' | 'manage_client_roles' | 'manage_grants'
-  | 'publish_content' | 'manage_broadcast' | 'manage_idea' | 'support_access';
+  | 'publish_content' | 'manage_broadcast' | 'manage_idea' | 'support_access'
+  | 'handle_support' | 'run_federated';
 
-export type GrantName = 'moderator' | 'content_publisher' | 'product_owner' | 'portal_admin' | 'support_access';
+export type GrantName = 'moderator' | 'content_publisher' | 'product_owner' | 'portal_admin' | 'support_access' | 'support_agent';
 export type MembershipRole = 'employee' | 'client_member' | 'client_admin';
 
 export type PrincipalMembership = {

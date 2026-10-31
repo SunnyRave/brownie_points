@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { EmptyState, PageHeader, fmtDateTime } from '@/components/ui';
 import { ReportDecision } from '@/components/moderation/ReportDecision';
 import { requirePrincipal } from '@/lib/page';
@@ -8,7 +9,7 @@ export default async function Reports() {
   const items = await listReports(p);
   return (
     <>
-      <PageHeader eyebrow="Moderation" title="Reports" description="Temporarily unpublish while you investigate, then restore or remove. The contributor is told the decision, never who reported." />
+      <PageHeader eyebrow="Moderation" title="Reports" description="Temporarily unpublish while you investigate, then restore or remove. The contributor is told the decision, never who reported." actions={<Link className="btn btn-ghost btn-sm" href="/moderate/comments#ne-h">Comment reports & “needs evidence” signals</Link>} />
       {items.length === 0 ? <EmptyState title="No reports" /> : (
         <ul className="grid gap-4">
           {items.map((r) => (

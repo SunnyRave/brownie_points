@@ -18,6 +18,10 @@ export default async function HubLayout({ children }: { children: React.ReactNod
     { href: '/hub/library', label: 'Knowledge library' },
     { href: '/hub/community', label: 'Collective learning' },
     { href: '/hub/ideas', label: 'Improvement ideas' },
+    { href: '/hub/teams', label: 'Hackathon team spaces' },
+    { href: '/hub/saved', label: 'Saved & bookmarks' },
+    { href: '/hub/federated', label: 'Federated programme (P2)' },
+    ...(hasGrant(p, 'support_agent') ? [{ href: '/hub/support', label: 'Client support desk' }] : []),
     ...(hasGrant(p, 'content_publisher') ? [{ href: '/hub/publish', label: 'Publishing' }] : []),
   ];
   return <PortalShell principal={p} persona="employee" nav={nav} activeLabel="Azentio">{children}</PortalShell>;

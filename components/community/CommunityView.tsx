@@ -1,11 +1,16 @@
 import { ThemeConstellation } from '@/components/home/ThemeConstellation';
 import { CommunityFeed } from './CommunityFeed';
+import { TrendChanges } from '@/components/assist/TrendChanges';
 import { PageHeader, SharedLabel } from '@/components/ui';
 import { themeDashboard } from '@/lib/insights';
+import { listSubscriptions } from '@/lib/services/engagement';
 import type { Principal } from '@/lib/policy/types';
 
-export async function CommunityView({ principal, focus }: { principal: Principal; focus?: string }) {
+export type CommunityInitial = { query?: string; filters?: Record<string, string> };
+
+export async function CommunityView({ principal, focus, initial }: { principal: Principal; focus?: string; initial?: CommunityInitial }) {
   const { themes, k } = await themeDashboard(principal);
+  const subscribed = (await listSubscriptions(principal)).map((s) => s.themeId);
   return (
     <>
       <PageHeader eyebrow="Shared community" title="Collective learning" description={<span className="flex flex-wrap items-center gap-2">Reviewed, de-identified contributions from client organisations. <SharedLabel /></span>} />
@@ -14,9 +19,11 @@ export async function CommunityView({ principal, focus }: { principal: Principal
         <p className="mb-4 text-sm text-ink-3">Counts appear only once at least {k} distinct organisations contribute, and only as bands. Repeated posts from one organisation count once. Popularity is not prevalence or proof of cause.</p>
         <ThemeConstellation
           themes={themes.map((t) => ({ ...t, evidence: t.evidence.map((e) => ({ id: e.id, title: e.title, region: e.region, period: e.period })) }))}
+          subscribed={subscribed}
         />
       </section>
-      <CommunityFeed focus={focus} />
+      <TrendChanges principal={principal} />
+      <CommunityFeed focus={focus} initialFilters={initial?.filters} initialQuery={initial?.query} />
     </>
   );
 }

@@ -10,7 +10,7 @@ export default async function ModerateLayout({ children }: { children: React.Rea
   const r = await guarded(() => enforce(p, 'moderate', { type: 'moderation_queue', audience: { kind: 'grant', grant: 'moderator' } }));
   if (!r.ok) return <Denied status={r.status} message="Moderation requires the learning moderator grant." />;
   return (
-    <PortalShell principal={p} persona="moderator" activeLabel="Azentio · Moderation" nav={[{ href: '/moderate', label: 'Review queue' }, { href: '/moderate/reports', label: 'Reports' }]}>
+    <PortalShell principal={p} persona="moderator" activeLabel="Azentio · Moderation" nav={[{ href: '/moderate', label: 'Review queue' }, { href: '/moderate/reports', label: 'Reports' }, { href: '/moderate/comments', label: 'Comment moderation' }, { href: '/moderate/assist', label: 'Duplicates & clusters' }]}>
       {children}
     </PortalShell>
   );

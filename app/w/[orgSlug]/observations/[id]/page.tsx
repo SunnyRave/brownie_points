@@ -4,8 +4,10 @@ import { SharePanel } from '@/components/learning/SharePanel';
 import { WithdrawPanel } from '@/components/learning/WithdrawPanel';
 import { DeleteDraft } from '@/components/learning/DeleteDraft';
 import { Composer } from '@/components/learning/Composer';
+import { Attachments } from '@/components/learning/Attachments';
 import { requirePrincipal, guarded } from '@/lib/page';
 import { getObservation } from '@/lib/services/observations';
+import { listAttachments } from '@/lib/services/attachments';
 import { allOfferings } from '@/lib/services/workspace';
 import { STATE_LABELS, canTransition, whoCanSee, type ObservationState } from '@/lib/learning/stateMachine';
 import { OBSERVATION_TYPE_LABELS } from '@/lib/validation';
@@ -24,6 +26,7 @@ export default async function ObservationDetail({ params, searchParams }: { para
   const canEdit = o.isMine && ['draft', 'returned', 'org_shared', 'published'].includes(state);
   const canWithdraw = o.isMine && canTransition(state, 'withdraw', 'author');
   const offerings = sp.edit && canEdit ? await allOfferings() : [];
+  const att = await guarded(() => listAttachments(p, id));
 
   return (
     <>
@@ -52,6 +55,10 @@ export default async function ObservationDetail({ params, searchParams }: { para
               </dl>
               {o.isMine && sensitiveFlags.length > 0 && <p className="mt-4 rounded-xl border border-amber/40 bg-amber/10 p-3 text-sm text-amber">The automated check flagged {sensitiveFlags.length} possible sensitive item(s) for the moderator. It helps, but it can’t guarantee privacy.</p>}
             </section>
+
+            {att.ok && (att.data.attachments.length > 0 || att.data.canUpload) && (
+              <Attachments observationId={id} items={att.data.attachments} canUpload={att.data.canUpload} limits={att.data.limits} />
+            )}
 
             {reviews.length > 0 && (
               <section className="panel-solid p-6">

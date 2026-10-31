@@ -1,35 +1,51 @@
 'use client';
 import { AnimatePresence, motion } from 'motion/react';
 import { useCallback, useEffect, useState } from 'react';
-import { Flag, Globe } from 'lucide-react';
+import { Flag, Globe, ShieldCheck } from 'lucide-react';
 import { api, errorText } from '@/lib/client';
+import { EVIDENCE_QUALITY_LABELS } from '@/lib/validation';
+import { BookmarkButton, CommentThread, FeedbackButtons, SaveSearch, type ItemEngagement } from './Engagement';
 
-type Item = { id: string; title: string; body: string; region: string | null; period: string | null; topic: string | null; industry: string | null; confidence: string | null; attribution: string | null; type: string; publishedAt: string; version: number };
+type Item = { id: string; title: string; body: string; region: string | null; period: string | null; topic: string | null; industry: string | null; confidence: string | null; attribution: string | null; evidenceQuality: 'strong' | 'moderate' | 'limited' | null; type: string; publishedAt: string; version: number };
 type Facet = { key: string; label: string; options: { value: string; label: string; disabled: boolean; reason?: string }[] };
 type Feed = { results: Item[]; count: number; facets: Facet[]; applied: Record<string, string>; rejected: string[]; k: number };
 
-/** CLI-05 + INS-03: filters whose slice (or complement) would fall below k are disabled — and refused server-side. */
-export function CommunityFeed({ focus }: { focus?: string }) {
-  const [filters, setFilters] = useState<Record<string, string>>({});
+const EMPTY: ItemEngagement = { useful: 0, needsEvidence: 0, mine: null, bookmarked: false, comments: 0 };
+
+/**
+ * CLI-05 + INS-03: filters whose slice (or complement) would fall below k are disabled — and refused server-side.
+ * `initialFilters` / `initialQuery` come from URL search params so saved searches can deep-link here.
+ */
+export function CommunityFeed({ focus, initialFilters, initialQuery }: { focus?: string; initialFilters?: Record<string, string>; initialQuery?: string }) {
+  const [filters, setFilters] = useState<Record<string, string>>(initialFilters ?? {});
   const [feed, setFeed] = useState<Feed | null>(null);
-  const [q, setQ] = useState('');
+  const [q, setQ] = useState(initialQuery ?? '');
+  const [eng, setEng] = useState<Record<string, ItemEngagement>>({});
   const load = useCallback(async (f: Record<string, string>) => {
     const qs = new URLSearchParams(Object.entries(f).filter(([, v]) => v));
-    setFeed(await api<Feed>(`/api/community?${qs}`));
+    const data = await api<Feed>(`/api/community?${qs}`);
+    setFeed(data);
+    if (data.results.length) {
+      try { setEng(await api<Record<string, ItemEngagement>>(`/api/community/engagement?ids=${data.results.map((r) => r.id).join(',')}`)); } catch { /* engagement is optional */ }
+    }
   }, []);
   useEffect(() => { load(filters); }, [filters, load]);
   const visible = feed?.results.filter((r) => !q || `${r.title} ${r.body}`.toLowerCase().includes(q.toLowerCase())) ?? [];
+  const patch = (id: string, s: Partial<ItemEngagement>) => setEng((e) => ({ ...e, [id]: { ...(e[id] ?? EMPTY), ...s } }));
 
   return (
     <section aria-labelledby="feed-h">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <h2 id="feed-h" className="text-xl font-semibold">Approved shared feed</h2>
-        <p className="font-mono text-xs text-muted" aria-live="polite">{visible.length} result{visible.length === 1 ? '' : 's'}</p>
+        <div className="flex flex-wrap items-center gap-3">
+          <SaveSearch query={q} filters={feed?.applied ?? filters} />
+          <p className="font-mono text-xs text-muted" aria-live="polite">{visible.length} result{visible.length === 1 ? '' : 's'}</p>
+        </div>
       </div>
       <div className="panel-glass mt-4 grid gap-3 p-4 md:grid-cols-3 xl:grid-cols-6">
         <div className="md:col-span-3 xl:col-span-1">
           <label htmlFor="feed-q" className="label">Search feed</label>
-          <input id="feed-q" className="input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Keyword" />
+          <input id="feed-q" className="input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Keyword" maxLength={200} />
         </div>
         {feed?.facets.map((f) => (
           <div key={f.key}>
@@ -44,24 +60,34 @@ export function CommunityFeed({ focus }: { focus?: string }) {
       {feed && feed.rejected.length > 0 && <p role="status" className="mt-3 text-sm text-amber">Some filters were not applied because they would narrow results below {feed.k} organisations.</p>}
       <ul className="mt-5 grid gap-4 md:grid-cols-2">
         <AnimatePresence>
-          {visible.map((r) => (
-            <motion.li key={r.id} layout initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.96 }} id={`item-${r.id}`} className={`panel-glass p-5 ${focus === r.id ? 'ring-2 ring-violet' : ''}`}>
-              <div className="flex flex-wrap items-center gap-2 text-xs">
-                <span className="chip border-violet/40 text-violet-text"><Globe size={11} aria-hidden /> Shared community</span>
-                {r.topic && <span className="chip">{r.topic}</span>}
-                {r.confidence && <span className="chip">confidence: {r.confidence}</span>}
-              </div>
-              <h3 className="mt-3 font-semibold">{r.title}</h3>
-              <p className="mt-2 text-sm text-ink-2">{r.body}</p>
-              <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
-                <p className="font-mono text-[11px] text-muted">{[r.industry, r.region, r.period].filter(Boolean).join(' · ')}{r.attribution ? ` · ${r.attribution}` : ' · de-identified'}</p>
-                <ReportButton id={r.id} onDone={() => load(filters)} />
-              </div>
-            </motion.li>
-          ))}
+          {visible.map((r) => {
+            const e = eng[r.id] ?? EMPTY;
+            return (
+              <motion.li key={r.id} layout initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.96 }} id={`item-${r.id}`} className={`panel-glass p-5 ${focus === r.id ? 'ring-2 ring-violet' : ''}`}>
+                <div className="flex flex-wrap items-center gap-2 text-xs">
+                  <span className="chip border-violet/40 text-violet-text"><Globe size={11} aria-hidden /> Shared community</span>
+                  {r.topic && <span className="chip">{r.topic}</span>}
+                  {r.confidence && <span className="chip">confidence: {r.confidence}</span>}
+                  {r.evidenceQuality && <span className="chip border-teal/40 text-teal" title="Assessed by a moderator at review — not a popularity score"><ShieldCheck size={11} aria-hidden /> {EVIDENCE_QUALITY_LABELS[r.evidenceQuality]} · reviewer-assessed</span>}
+                </div>
+                <h3 className="mt-3 font-semibold">{r.title}</h3>
+                <p className="mt-2 text-sm text-ink-2">{r.body}</p>
+                <p className="mt-3 font-mono text-[11px] text-muted">{[r.industry, r.region, r.period].filter(Boolean).join(' · ')}{r.attribution ? ` · ${r.attribution}` : ' · de-identified'} · reviewed by a moderator before publishing</p>
+                <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
+                  <FeedbackButtons id={r.id} state={e} onChange={(s) => patch(r.id, s)} />
+                  <div className="flex flex-wrap items-center gap-2">
+                    <BookmarkButton id={r.id} on={e.bookmarked} onChange={(on) => patch(r.id, { bookmarked: on })} />
+                    <ReportButton id={r.id} onDone={() => load(filters)} />
+                  </div>
+                </div>
+                <CommentThread id={r.id} count={e.comments} onCount={(n) => patch(r.id, { comments: n })} />
+              </motion.li>
+            );
+          })}
         </AnimatePresence>
       </ul>
       {feed && visible.length === 0 && <p className="mt-6 text-sm text-ink-3">No approved contributions match.</p>}
+      <p className="mt-6 text-xs text-ink-3">Feedback is shown per contribution only. There are no rankings of organisations or people, and posting more does not earn recognition — quality does.</p>
     </section>
   );
 }

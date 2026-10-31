@@ -44,7 +44,7 @@ export const grants = pgTable('grants', {
   id: id(),
   userId: text('user_id').notNull().references(() => users.id),
   grant: text('grant', {
-    enum: ['moderator', 'content_publisher', 'product_owner', 'portal_admin', 'support_access'],
+    enum: ['moderator', 'content_publisher', 'product_owner', 'portal_admin', 'support_access', 'support_agent'],
   }).notNull(),
   scopeOrgId: text('scope_org_id').references(() => organisations.id),
   scopeIdeaId: text('scope_idea_id'),
@@ -257,6 +257,8 @@ export const sharedInsights = pgTable('shared_insights', {
   topic: text('topic'),
   confidence: text('confidence'),
   attributionOrgName: text('attribution_org_name'),
+  /** Reviewer-assessed evidence quality, set by the moderator at approval. */
+  evidenceQuality: text('evidence_quality', { enum: ['strong', 'moderate', 'limited'] }),
   status: text('status', { enum: ['published', 'unpublished', 'withdrawn', 'removed'] }).notNull(),
   publishedAt: timestamp('published_at', { withTimezone: true }).notNull().defaultNow(),
   withdrawnAt: timestamp('withdrawn_at', { withTimezone: true }),
@@ -435,4 +437,205 @@ export const eventRegistrations = pgTable(
 export const settings = pgTable('settings', {
   key: text('key').primaryKey(),
   value: jsonb('value').notNull(),
+});
+
+// ───────────────────────── Community engagement (§06 CLI-08/09, §10) ─────────────────────────
+
+/** "Useful / needs evidence" quality feedback on a shared contribution. One vote per user per item. */
+export const contributionFeedback = pgTable(
+  'contribution_feedback',
+  {
+    id: id(),
+    sharedInsightId: text('shared_insight_id').notNull().references(() => sharedInsights.id),
+    userId: text('user_id').notNull().references(() => users.id),
+    rating: text('rating', { enum: ['useful', 'needs_evidence'] }).notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [uniqueIndex('contribution_feedback_user').on(t.sharedInsightId, t.userId)],
+);
+
+/** Comments inherit the parent shared insight's audience (shared_community). Author identity never leaves the server. */
+export const comments = pgTable(
+  'comments',
+  {
+    id: id(),
+    sharedInsightId: text('shared_insight_id').notNull().references(() => sharedInsights.id),
+    authorId: text('author_id').notNull().references(() => users.id), // server-only
+    authorTenantId: text('author_tenant_id'), // server-only; null for employees
+    authorKind: text('author_kind', { enum: ['client', 'employee'] }).notNull(),
+    body: text('body').notNull(),
+    status: text('status', { enum: ['visible', 'held', 'hidden', 'removed'] }).notNull().default('visible'),
+    sensitiveFlags: jsonb('sensitive_flags').$type<SensitiveFlag[]>().notNull().default([]),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index('comments_parent').on(t.sharedInsightId)],
+);
+
+export const commentReports = pgTable('comment_reports', {
+  id: id(),
+  commentId: text('comment_id').notNull().references(() => comments.id),
+  reporterId: text('reporter_id').notNull(),
+  reason: text('reason', { enum: ['misleading', 'confidential', 'inappropriate', 'other'] }).notNull(),
+  details: text('details'),
+  status: text('status', { enum: ['open', 'resolved'] }).notNull().default('open'),
+  decision: text('decision'),
+  decidedBy: text('decided_by'),
+  createdAt: createdAt(),
+  decidedAt: timestamp('decided_at', { withTimezone: true }),
+});
+
+/** Per-user bookmarks. Visibility is re-checked at read time; a bookmark never grants access. */
+export const bookmarks = pgTable(
+  'bookmarks',
+  {
+    id: id(),
+    userId: text('user_id').notNull().references(() => users.id),
+    tenantId: text('tenant_id'),
+    sourceType: text('source_type').notNull(),
+    sourceId: text('source_id').notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex('bookmarks_user_source').on(t.userId, t.sourceType, t.sourceId)],
+);
+
+/** Saved searches persist the query + filters only, never results; they re-run under current visibility. */
+export const savedSearches = pgTable('saved_searches', {
+  id: id(),
+  userId: text('user_id').notNull().references(() => users.id),
+  tenantId: text('tenant_id'),
+  name: text('name').notNull(),
+  query: text('query').notNull().default(''),
+  filters: jsonb('filters').$type<Record<string, string>>().notNull().default({}),
+  createdAt: createdAt(),
+});
+
+export const themeSubscriptions = pgTable(
+  'theme_subscriptions',
+  {
+    id: id(),
+    userId: text('user_id').notNull().references(() => users.id),
+    themeId: text('theme_id').notNull().references(() => themes.id),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex('theme_subscriptions_user_theme').on(t.userId, t.themeId)],
+);
+
+// ───────────────────────── Client support tickets (§06) ─────────────────────────
+
+export const supportTickets = pgTable('support_tickets', {
+  id: id(),
+  tenantId: text('tenant_id').notNull().references(() => organisations.id),
+  createdBy: text('created_by').notNull().references(() => users.id),
+  subject: text('subject').notNull(),
+  category: text('category', { enum: ['access', 'product_question', 'sandbox', 'contribution', 'other'] }).notNull(),
+  priority: text('priority', { enum: ['low', 'normal', 'high'] }).notNull().default('normal'),
+  status: text('status', { enum: ['open', 'in_progress', 'waiting_on_client', 'resolved', 'closed'] }).notNull().default('open'),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+});
+
+export const supportTicketMessages = pgTable('support_ticket_messages', {
+  id: id(),
+  ticketId: text('ticket_id').notNull().references(() => supportTickets.id),
+  tenantId: text('tenant_id').notNull(),
+  authorId: text('author_id').notNull(),
+  authorSide: text('author_side', { enum: ['client', 'azentio'] }).notNull(),
+  body: text('body').notNull(),
+  createdAt: createdAt(),
+});
+
+// ───────────────────────── Observation attachments (OBS-09) ─────────────────────────
+
+/** Private per-tenant files. Inherit the parent observation's audience; never copied to shared_insights. */
+export const observationAttachments = pgTable('observation_attachments', {
+  id: id(),
+  observationId: text('observation_id').notNull().references(() => observations.id),
+  tenantId: text('tenant_id').notNull(),
+  uploadedBy: text('uploaded_by').notNull(),
+  filename: text('filename').notNull(),
+  contentType: text('content_type').notNull(),
+  sizeBytes: integer('size_bytes').notNull(),
+  sha256: text('sha256').notNull(),
+  storageKey: text('storage_key').notNull(),
+  createdAt: createdAt(),
+});
+
+// ───────────────────────── Employee hackathon team spaces (§05) ─────────────────────────
+
+export const teamSpaces = pgTable('team_spaces', {
+  id: id(),
+  name: text('name').notNull(),
+  challenge: text('challenge').notNull(),
+  status: text('status', { enum: ['forming', 'building', 'submitted', 'archived'] }).notNull().default('forming'),
+  createdBy: text('created_by').notNull(),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+});
+
+export const teamSpaceMembers = pgTable(
+  'team_space_members',
+  {
+    spaceId: text('space_id').notNull().references(() => teamSpaces.id),
+    userId: text('user_id').notNull().references(() => users.id),
+    role: text('role', { enum: ['owner', 'member'] }).notNull().default('member'),
+    createdAt: createdAt(),
+  },
+  (t) => [primaryKey({ columns: [t.spaceId, t.userId] })],
+);
+
+export const teamSpacePosts = pgTable('team_space_posts', {
+  id: id(),
+  spaceId: text('space_id').notNull().references(() => teamSpaces.id),
+  authorId: text('author_id').notNull(),
+  kind: text('kind', { enum: ['update', 'note', 'link'] }).notNull().default('update'),
+  body: text('body').notNull(),
+  createdAt: createdAt(),
+});
+
+// ───────────────────────── P2: federated model-learning programme (§11) ─────────────────────────
+
+/** Separate, opt-in programme consent per client organisation. Not implied by membership or publishing consent. */
+export const flParticipants = pgTable('fl_participants', {
+  id: id(),
+  orgId: text('org_id').notNull().references(() => organisations.id).unique(),
+  status: text('status', { enum: ['enrolled', 'withdrawn'] }).notNull(),
+  consentedBy: text('consented_by').notNull(),
+  consentedAt: timestamp('consented_at', { withTimezone: true }).notNull().defaultNow(),
+  withdrawnAt: timestamp('withdrawn_at', { withTimezone: true }),
+  /** HMAC key id used to authenticate this participant's updates (secret derived server-side, never stored here). */
+  keyId: text('key_id').notNull(),
+});
+
+/** One aggregation round. Holds update metadata and metrics only — never training examples. */
+export const flRounds = pgTable('fl_rounds', {
+  id: id(),
+  roundNo: integer('round_no').notNull(),
+  modelVersion: text('model_version').notNull(),
+  baseModelVersion: text('base_model_version'),
+  aggregationMethod: text('aggregation_method').notNull(),
+  config: jsonb('config').$type<Record<string, unknown>>().notNull().default({}),
+  participants: jsonb('participants').$type<Record<string, unknown>[]>().notNull().default([]),
+  metrics: jsonb('metrics').$type<Record<string, unknown>>().notNull().default({}),
+  status: text('status', { enum: ['completed', 'aborted'] }).notNull(),
+  startedBy: text('started_by').notNull(),
+  startedAt: timestamp('started_at', { withTimezone: true }).notNull().defaultNow(),
+  finishedAt: timestamp('finished_at', { withTimezone: true }),
+});
+
+/** Model registry. Aggregates are only ever candidates until a human decides; rollback restores the parent. */
+export const flModels = pgTable('fl_models', {
+  id: id(),
+  version: text('version').notNull().unique(),
+  roundId: text('round_id'),
+  parentVersion: text('parent_version'),
+  weights: jsonb('weights').$type<number[]>().notNull(),
+  featureSchema: jsonb('feature_schema').$type<string[]>().notNull(),
+  metrics: jsonb('metrics').$type<Record<string, unknown>>().notNull().default({}),
+  status: text('status', { enum: ['candidate', 'approved', 'rejected', 'deployed', 'rolled_back'] }).notNull().default('candidate'),
+  decidedBy: text('decided_by'),
+  decisionNote: text('decision_note'),
+  decidedAt: timestamp('decided_at', { withTimezone: true }),
+  createdAt: createdAt(),
 });

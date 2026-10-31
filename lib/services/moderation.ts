@@ -9,6 +9,7 @@ import { indexDocument, removeFromIndex } from '@/lib/search';
 import { nextState, TransitionError, STATE_LABELS, type ObservationState, type TransitionEvent } from '@/lib/learning/stateMachine';
 import { moderationDecisionSchema, reportDecisionSchema, reportSchema } from '@/lib/validation';
 import type { Principal } from '@/lib/policy/types';
+import { notifyThemeSubscribers } from '@/lib/services/engagement';
 
 const queueResource = { type: 'moderation_queue', audience: { kind: 'grant' as const, grant: 'moderator' as const } };
 type Obs = typeof schema.observations.$inferSelect;
@@ -105,7 +106,7 @@ export async function decide(principal: Principal | null, id: string, raw: unkno
   await enforce(principal, 'moderate', { ...queueResource, id });
   const input = moderationDecisionSchema.parse(raw);
   const moderatorId = principal!.userId;
-  return withModeratorTx(moderatorId, async (tx) => {
+  const result = await withModeratorTx(moderatorId, async (tx) => {
     let [obs] = await tx.select().from(schema.observations).where(eq(schema.observations.id, id)).limit(1);
     if (!obs) throw notFound();
     if (obs.state === 'submitted') obs = await moderatorTransition(tx, moderatorId, obs, 'claim');
@@ -113,7 +114,7 @@ export async function decide(principal: Principal | null, id: string, raw: unkno
     if (input.decision === 'return' || input.decision === 'reject') {
       await tx.insert(schema.reviews).values({ observationId: id, tenantId: obs.tenantId, version: obs.version, moderatorId, decision: input.decision, authorReason: input.decision === 'reject' ? `[${input.category.replace('_', ' ')}] ${input.authorReason}` : input.authorReason, internalNote: input.internalNote ?? null });
       await moderatorTransition(tx, moderatorId, obs, input.decision, input.authorReason);
-      return { state: input.decision === 'return' ? 'returned' : 'rejected' };
+      return { state: input.decision === 'return' ? 'returned' : 'rejected' } as { state: string; sharedInsightId?: string; themeId?: string | null; authorId?: string };
     }
 
     // approve
@@ -129,7 +130,7 @@ export async function decide(principal: Principal | null, id: string, raw: unkno
     const sharedValues = {
       version: obs.version, type: obs.type, title: s.title, body: s.body, offeringId: obs.offeringId, industry: obs.industry,
       regionGeneralised: s.regionGeneralised, periodQuarter: s.periodQuarter, topic: s.topic, confidence: obs.confidence,
-      attributionOrgName, status: 'published' as const, publishedAt: new Date(), withdrawnAt: null, updatedAt: new Date(),
+      attributionOrgName, evidenceQuality: input.evidenceQuality ?? null, status: 'published' as const, publishedAt: new Date(), withdrawnAt: null, updatedAt: new Date(),
     };
     // Only reviewed fields are copied. No author, tenant, attachments or hidden metadata.
     const [shared] = await tx
@@ -147,8 +148,13 @@ export async function decide(principal: Principal | null, id: string, raw: unkno
     await tx.insert(schema.reviews).values({ observationId: id, tenantId: obs.tenantId, version: obs.version, moderatorId, decision: 'approve', authorReason: input.authorReason, internalNote: input.internalNote ?? null, redactionDiff });
     await audit(tx, { actorId: moderatorId, action: 'shared_insight.publish', resourceType: 'shared_insight', resourceId: shared.id, meta: { version: obs.version, attribution: !!attributionOrgName, theme: s.themeId ?? null } });
     await moderatorTransition(tx, moderatorId, obs, 'approve', input.authorReason);
-    return { state: 'published', sharedInsightId: shared.id };
+    return { state: 'published', sharedInsightId: shared.id, themeId: s.themeId ?? null, authorId: obs.authorId };
   });
+  // Theme subscribers hear about it after commit, with a k-safe message (theme_subscriptions is owner/system-only under RLS).
+  if (result.sharedInsightId && result.themeId) {
+    await notifyThemeSubscribers(result.themeId, result.sharedInsightId, result.authorId ?? null).catch((e) => console.error('theme subscriber notification failed', e));
+  }
+  return { state: result.state, ...(result.sharedInsightId ? { sharedInsightId: result.sharedInsightId } : {}) };
 }
 
 // ───────── Reports (MOD-04) ─────────

@@ -24,7 +24,7 @@ describe('shared insight DTO (AT-09, SHR-03)', () => {
     const row = {
       id: 's1', sourceObservationId: 'obs-secret', sourceTenantId: 'tenant-secret', version: 2, type: 'trend', title: 'T', body: 'B',
       offeringId: 'o', industry: 'Banking', regionGeneralised: 'Europe', periodQuarter: '2026 Q1', topic: 'Seasonality', confidence: 'high',
-      attributionOrgName: null, status: 'published' as const, publishedAt: new Date(), withdrawnAt: null, updatedAt: new Date(),
+      attributionOrgName: null, evidenceQuality: 'moderate' as const, status: 'published' as const, publishedAt: new Date(), withdrawnAt: null, updatedAt: new Date(),
     };
     const json = JSON.stringify(toSharedInsightDTO(row));
     const dto = JSON.parse(json);

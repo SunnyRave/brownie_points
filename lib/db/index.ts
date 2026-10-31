@@ -46,6 +46,8 @@ export function getDb(): Promise<Db> {
       if (process.env.AUTO_SEED !== '0') {
         const { seedIfEmpty } = await import('@/scripts/seed-data');
         await seedIfEmpty(db);
+        const { seedExtrasIfMissing } = await import('@/scripts/seed/extras');
+        await seedExtrasIfMissing(db);
       }
       return db;
     })();

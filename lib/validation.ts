@@ -50,6 +50,9 @@ export const submitSchema = z
     path: ['consents', 'publishShared'],
   });
 
+export const EVIDENCE_QUALITY = ['strong', 'moderate', 'limited'] as const;
+export const EVIDENCE_QUALITY_LABELS: Record<(typeof EVIDENCE_QUALITY)[number], string> = { strong: 'Strong evidence', moderate: 'Moderate evidence', limited: 'Limited evidence' };
+
 export const moderationDecisionSchema = z.discriminatedUnion('decision', [
   z.object({ decision: z.literal('return'), authorReason: z.string().trim().min(10).max(1000), internalNote: z.string().max(2000).optional() }),
   z.object({
@@ -62,6 +65,8 @@ export const moderationDecisionSchema = z.discriminatedUnion('decision', [
     decision: z.literal('approve'),
     authorReason: z.string().trim().min(5).max(1000),
     internalNote: z.string().max(2000).optional(),
+    /** Reviewer-assessed evidence quality (§10), shown on the shared card. */
+    evidenceQuality: z.enum(EVIDENCE_QUALITY).nullable().optional(),
     shared: z.object({
       title: z.string().trim().min(8).max(140),
       body: z.string().trim().min(40).max(4000),
@@ -127,7 +132,7 @@ export const magicLinkRequestSchema = z.object({ email: z.string().trim().toLowe
 
 export const grantSchema = z.object({
   email: z.string().trim().toLowerCase().email(),
-  grant: z.enum(['moderator', 'content_publisher', 'product_owner', 'portal_admin', 'support_access']),
+  grant: z.enum(['moderator', 'content_publisher', 'product_owner', 'portal_admin', 'support_access', 'support_agent']),
   scopeOrgId: z.string().max(64).nullable().optional(),
   scopeIdeaId: z.string().max(64).nullable().optional(),
   expiresInHours: z.number().int().min(1).max(24 * 365).nullable().optional(),
@@ -142,3 +147,24 @@ export const broadcastSchema = z.object({
   audience: z.enum(['employee', 'public', 'shared_community']).or(z.string().regex(/^tenant:[\w-]+$/)),
   status: z.enum(['scheduled', 'live', 'ended']),
 });
+
+// ───────── Community engagement (§06 CLI-08/09, §10) ─────────
+
+export const feedbackSchema = z.object({ rating: z.enum(['useful', 'needs_evidence']) });
+export const COMMENT_MIN = 2;
+export const COMMENT_MAX = 1000;
+export const commentSchema = z.object({ body: z.string().trim().min(COMMENT_MIN, `At least ${COMMENT_MIN} characters`).max(COMMENT_MAX, `At most ${COMMENT_MAX} characters`) });
+export const commentDecisionSchema = z.object({
+  action: z.enum(['approve', 'hide', 'remove', 'restore', 'dismiss']),
+  /** Shown to the comment author. Never an internal note. */
+  note: z.string().trim().min(5, 'At least 5 characters').max(1000),
+});
+export const BOOKMARK_SOURCE_TYPES = ['shared_insight', 'idea'] as const;
+export const bookmarkSchema = z.object({ sourceType: z.enum(BOOKMARK_SOURCE_TYPES), sourceId: z.string().trim().min(1).max(64) });
+export const SAVED_SEARCH_FILTER_KEYS = ['offering', 'industry', 'region', 'period', 'topic'] as const;
+export const savedSearchSchema = z.object({
+  name: z.string().trim().min(2, 'At least 2 characters').max(80, 'At most 80 characters'),
+  query: z.string().trim().max(200).default(''),
+  filters: z.record(z.enum(SAVED_SEARCH_FILTER_KEYS), z.string().trim().max(80)).default({}),
+});
+export const digestRunSchema = z.object({ sinceDays: z.number().int().min(1).max(90).optional() }).default({});

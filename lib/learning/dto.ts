@@ -24,6 +24,8 @@ export type SharedInsightDTO = {
   topic: string | null;
   confidence: string | null;
   attribution: string | null;
+  /** Reviewer-assessed evidence quality (moderator judgement, not a popularity score). */
+  evidenceQuality: 'strong' | 'moderate' | 'limited' | null;
   publishedAt: string;
 };
 
@@ -42,6 +44,7 @@ export function toSharedInsightDTO(r: SharedRow): SharedInsightDTO {
     topic: r.topic,
     confidence: r.confidence,
     attribution: r.attributionOrgName,
+    evidenceQuality: r.evidenceQuality ?? null,
     publishedAt: r.publishedAt.toISOString(),
   };
 }

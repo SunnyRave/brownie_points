@@ -1,6 +1,6 @@
 # azentio.ai: website and intelligent collaboration portal
 
-This is a hackathon build of the azentio.ai public website and secure collaboration portal. It covers public discovery, an employee hub, isolated client workspaces, a moderated **collective learning hub** (with withdrawal) and the **improvement loop**.
+This is a hackathon build of the azentio.ai public website and secure collaboration portal. It covers public discovery, an employee hub, isolated client workspaces, a moderated **collective learning hub** (with withdrawal), the **improvement loop**, client collaboration tools (comments, bookmarks, saved searches, support tickets, attachments) and a separate, opt-in **federated model-learning programme** (P2, see [docs/FEDERATED.md](docs/FEDERATED.md)).
 
 > **Public website content is real azentio.ai content.** The 8 products, their capabilities, steps and outcomes, the solutions, About, AI Lab, Technology, Insights and Media pages come from the reference azentio.ai site named in the brief. Company background on /about comes from public profiles of Azentio Software. It all lives in `scripts/azentio-catalogue.ts`, is seeded into the CMS tables, and renders from the database. Homepage stats and the theme preview are live queries.
 >
@@ -22,7 +22,7 @@ Open **/login**. In demo mode, a panel of synthetic personas sends real magic li
 | Content publisher | priya.publisher@azentio.com | Edits the banner and broadcast audiences |
 | Learning moderator | maya.moderator@azentio.com | Uses the queue and handles reports |
 | Product owner | omar.owner@azentio.com | Manages ideas linked to approved evidence |
-| Portal admin | ada.admin@azentio.com | Manages orgs, entitlements, grants, settings and the audit log |
+| Portal admin | ada.admin@azentio.com | Manages orgs, entitlements, grants, settings and the audit log. Also holds `support_agent` (client support desk) and runs federated rounds |
 | Pending employee | sam.pending@azentio.com | Verified identity but not on the allow-list, so access is pending |
 | Northwind admin / member | nina.admin@ / noah.analyst@northwind.example | Client workspace and team admin |
 | Harbor / Meridian members | hugo.analyst@harbor.example, max.analyst@meridian.example | Other tenants |
@@ -100,6 +100,25 @@ Magic links serve two purposes: the employee fallback (switchable in config, and
 - Sessions are stored in the database, with httpOnly cookies, SameSite=Lax, a 30-minute idle timeout and a 12-hour absolute timeout.
 - Any change to a user's grants, role or membership deletes their sessions.
 
+## Collaboration, insight assist and federated features
+
+Each feature has its own service in `lib/services/` (or `lib/federated/`, `lib/insights/assist.ts`), calls `enforce()` first, and its tables have RLS (`db/migrations/0003_collaboration_and_federated.sql`).
+
+| Feature | Where | Safeguards |
+|---|---|---|
+| Quality feedback: "Useful / Needs evidence" (§10) | Community feed cards | One vote per user per item. Totals are per item only, with no per-org or per-author tallies and no leaderboards. Moderators see the "needs evidence" signals. |
+| Reviewer-assessed evidence quality (§10) | Moderator approve form, then feed cards | Set by the moderator at approval and part of the allow-listed DTO. |
+| Collaborative comments (CLI-08) | Community feed cards; `/moderate/comments` | Inherit the parent's audience and disappear when the parent is withdrawn. Authors show only as "Client participant" or "Azentio employee". The sensitive-content scan holds a comment for moderation. Comments can be reported, and moderator decisions notify the author. |
+| Bookmarks and saved searches (CLI-09) | `/w/[org]/saved`, `/hub/saved` | Owner-only RLS. Visibility is re-checked on every read. Saved searches store the query and filters only, and re-run through `communityFeed()` so the current k rules apply. |
+| Theme subscriptions and digests (§10) | "Follow theme" on the dashboard; `npm run digest` | Notices name the theme and show an org band only once the theme reaches k. Digests are idempotent per ISO week, and their emails stay `queued`. |
+| Support tickets (§06) | `/w/[org]/support`; `/hub/support` (`support_agent` grant) | Tenant RLS. The desk sees ticket threads only, not the org's other content. Status changes are audited, and the sensitive-content scan runs on messages. |
+| Observation attachments (OBS-09) | Observation detail; moderator review | PDF, PNG, JPEG, CSV or TXT, checked by magic bytes. 5 MB per file, 5 per record. Stored privately per tenant under random keys. Visibility follows the parent record (RLS subquery). Only the author can change attachments, and only while the record is a draft or returned. Never copied to the shared copy. |
+| Hackathon team spaces (§05) | `/hub/teams` | Employees only and never indexed for search or AIRA. Only members can post, and owners manage status. |
+| Duplicates and clusters (§10) | `/moderate/assist`; panel on each review | Lexical similarity (TF-IDF plus title trigrams), **not semantic embeddings**. Only compares published shared copies and the queue moderators can already see, so drafts, private and org-only records are never read. Same-org repeats are flagged as yes/no only. |
+| Trend-change summaries (§10) | Community theme dashboard | A direction is given only when the theme and every compared window have 0 or at least k organisations. Otherwise: "insufficient evidence". |
+| Assisted prioritisation (§10) | `/hub/ideas` (product owners) | A transparent score broken down by factor, for themes with at least k organisations only. Labelled "assistive — not a decision". |
+| Federated learning, P2 (§11) | `/hub/federated`; opt-in on `/w/[org]/team`; `npm run fl:demo` | Separate programme consent. Local training per isolated synthetic dataset. Signed updates are validated, clipped and checked for poisoning; a minimum cohort of 3 is required; aggregation is weighted FedAvg. Results are evaluated on a separate holdout against baselines. Every model is a candidate until a human decides; rollback is supported. Secure aggregation and formal DP are **not** implemented, and the UI says so. See [docs/FEDERATED.md](docs/FEDERATED.md). |
+
 ## Policies to document for production
 
 - **Withdrawal:**
@@ -127,7 +146,7 @@ Magic links serve two purposes: the employee fallback (switchable in config, and
 ## Tests
 
 ```bash
-npm test                                         # 50 unit + DB security tests (in-memory Postgres with RLS)
+npm test                                         # 118 unit + DB security tests (in-memory Postgres with RLS)
 npm run build && npm start                       # then, in another terminal:
 E2E_BASE_URL=http://localhost:3000 npm run test:api   # 8 HTTP tests: real magic-link login, CSRF, forged tenants, headers
 npm run test:ui                                  # Playwright (system Chrome): AT-21 + full UI demo flow
@@ -175,15 +194,11 @@ Seed a fresh database before running the HTTP and UI suites. Magic-link requests
 - **Auth.js was not used.** OIDC with PKCE and the sessions are implemented directly (`lib/auth/*`, built on `jose`), which gives direct control of claim checks and session revocation. Entra sign-in is implemented but **untested against a live tenant** in this environment, because no credentials were available. The claim validator is unit-tested.
 - **Admin MFA (AUTH-12):** admin writes require an `mfa` claim from within the last hour for Microsoft sessions. Magic-link demo sessions are exempt and labelled as such.
 - **Hero animation:** the hero uses SVG and CSS rather than React Three Fiber, so it is LCP-safe with no WebGL. The learning journey uses Framer rather than a pinned GSAP scroll story.
-- **Search:** there are no vector embeddings (pgvector), because no embedding provider is configured. Search is full-text with the same audience partitioning.
-- **Not implemented:**
-  - attachments (OBS-09); links in the body text are the alternative
-  - comments, bookmarks and saved searches (CLI-08 and CLI-09)
-  - digests
-  - the ⌘K command palette
-  - a light theme
-  - semantic clustering; theme suggestion is topic-based
-  - the optional federated-learning track (P2)
+- **Search and clustering:** there are no vector embeddings (pgvector), because no embedding provider is configured. Search is full-text with audience partitioning. Duplicate detection and clustering use lexical TF-IDF similarity, which misses paraphrases; the production path is pgvector with the audience filter applied first.
+- **Federated learning (P2) is a simulation on one server.** Each participant's data sits in its own directory and only signed updates reach the coordinator, but these are not separate environments. Participant authentication is a simulated HMAC. Secure aggregation and formal differential privacy are not implemented.
+- **Attachments** are written to the local disk (`storage/attachments/`). A host with a read-only filesystem needs object storage instead.
+- **Digests** are triggered manually (`npm run digest` or the admin API); no scheduler is configured.
+- **Not implemented:** the ⌘K command palette and a light theme.
 - **Dev mailbox:** `/dev/mailbox` exposes sign-in links and exists **only when `DEMO_MODE=1`**. Never enable it in production.
 - **Lighthouse and WCAG:** Lighthouse scores and a full WCAG audit have not been measured yet. The build includes skip links, visible focus rings, 44px targets, labelled controls, `aria-live` regions and reduced-motion handling.
 - **Concurrency:** embedded PGlite is single-process. Use `DATABASE_URL` for multi-instance hosting.

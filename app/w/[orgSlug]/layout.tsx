@@ -23,6 +23,8 @@ export default async function WorkspaceLayout({ children, params }: { children: 
     { href: `${base}/community`, label: 'Shared community' },
     { href: `${base}/ideas`, label: 'Improvement ideas' },
     { href: `${base}/resources`, label: 'Briefings & sessions' },
+    { href: `${base}/saved`, label: 'Saved & bookmarks' },
+    { href: `${base}/support`, label: 'Support' },
     ...(target.role === 'client_admin' ? [{ href: `${base}/team`, label: 'Team & invitations' }] : []),
   ];
   return (

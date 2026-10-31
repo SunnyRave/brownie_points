@@ -1,6 +1,7 @@
 'use client';
 import { AnimatePresence, motion } from 'motion/react';
 import { useState } from 'react';
+import { BellPlus, BellRing } from 'lucide-react';
 
 export type ConstellationTheme = {
   id: string;
@@ -21,8 +22,9 @@ const POS = [[30, 38], [68, 30], [55, 70], [22, 74], [82, 66], [45, 18]];
 const sizeFor = (t: ConstellationTheme) => (t.emerging ? 12 : t.orgBand === '10+' ? 30 : t.orgBand === '6–10' ? 24 : 19);
 
 /** Themes as glowing nodes sized by distinct-org band; emerging themes are dim and dashed. */
-export function ThemeConstellation({ themes, illustrative }: { themes: ConstellationTheme[]; illustrative?: boolean }) {
+export function ThemeConstellation({ themes, illustrative, subscribed }: { themes: ConstellationTheme[]; illustrative?: boolean; subscribed?: string[] }) {
   const [sel, setSel] = useState(themes.find((t) => !t.emerging)?.id ?? themes[0]?.id);
+  const [subs, setSubs] = useState<string[] | undefined>(subscribed);
   const t = themes.find((x) => x.id === sel);
   return (
     <div className="grid gap-6 lg:grid-cols-[1.1fr_1fr]">
@@ -59,7 +61,10 @@ export function ThemeConstellation({ themes, illustrative }: { themes: Constella
               {t.emerging ? <span className="chip">Emerging · gathering evidence</span> : <span className="chip border-teal/40 text-teal">{t.orgBand} contributing organisations</span>}
               {t.offerings.map((o) => <span key={o} className="chip">{o}</span>)}
             </div>
-            <h3 className="mt-4 text-2xl font-semibold">{t.name}</h3>
+            <div className="mt-4 flex flex-wrap items-start justify-between gap-3">
+              <h3 className="text-2xl font-semibold">{t.name}</h3>
+              {subs && <SubscribeButton themeId={t.id} on={subs.includes(t.id)} onChange={(on) => setSubs((s) => (on ? [...(s ?? []), t.id] : (s ?? []).filter((x) => x !== t.id)))} />}
+            </div>
             <p className="mt-2 text-ink-2">{t.summary}</p>
             {!t.emerging && t.period && <p className="mt-3 font-mono text-xs text-ink-3">Observation period: {t.period}</p>}
             {(t.smallSample || t.emerging) && (
@@ -92,5 +97,24 @@ export function ThemeConstellation({ themes, illustrative }: { themes: Constella
         )}
       </AnimatePresence>
     </div>
+  );
+}
+
+/** Theme subscription: in-app updates + a weekly digest that follows the same k-threshold rules as this dashboard. */
+function SubscribeButton({ themeId, on, onChange }: { themeId: string; on: boolean; onChange: (on: boolean) => void }) {
+  const [busy, setBusy] = useState(false);
+  const toggle = async () => {
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/themes/${themeId}/subscription`, { method: on ? 'DELETE' : 'POST', credentials: 'same-origin' });
+      if (res.ok) onChange(!on);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <button type="button" disabled={busy} aria-pressed={on} onClick={toggle} className={`btn btn-ghost btn-sm ${on ? '!border-teal !text-teal' : ''}`} title="Get in-app updates and a weekly digest. Counts are shown only as bands once enough organisations contribute.">
+      {on ? <BellRing size={13} aria-hidden /> : <BellPlus size={13} aria-hidden />} {on ? 'Following' : 'Follow theme'}
+    </button>
   );
 }

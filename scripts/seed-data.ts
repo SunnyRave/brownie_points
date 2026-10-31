@@ -57,6 +57,9 @@ export async function seedIfEmpty(db: Db) {
 }
 
 const TABLES = [
+  'contribution_feedback', 'comment_reports', 'comments', 'bookmarks', 'saved_searches', 'theme_subscriptions',
+  'support_ticket_messages', 'support_tickets', 'observation_attachments', 'team_space_posts', 'team_space_members', 'team_spaces',
+  'fl_models', 'fl_rounds', 'fl_participants',
   'theme_links', 'idea_evidence', 'reports', 'themes', 'ideas', 'reviews', 'consents', 'shared_insights', 'observations',
   'search_documents', 'retrieval_blocklist', 'notifications', 'outbox', 'audit_events', 'playground_runs', 'leads',
   'event_registrations', 'events', 'broadcasts', 'media', 'content', 'entitlements', 'offerings', 'sessions', 'magic_links',
@@ -332,5 +335,9 @@ async function seed(db: Db) {
     }
     const shared = await tx.select().from(schema.sharedInsights);
     for (const s of shared) await indexDocument(tx, { audienceKey: 'shared_community', sourceType: 'shared_insight', sourceId: s.id, title: s.title, text: s.body, url: `/community/${s.id}` });
+
+    // ── Collaboration, team spaces and the federated programme (scripts/seed/*)
+    const { seedExtras } = await import('./seed/extras');
+    await seedExtras(tx);
   });
 }

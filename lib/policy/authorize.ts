@@ -80,7 +80,10 @@ export function requiredGrantFor(action: Action): RequiredGrant {
     case 'manage_broadcast':
       return 'content_publisher';
     case 'manage_grants':
+    case 'run_federated':
       return 'portal_admin';
+    case 'handle_support':
+      return 'support_agent';
     case 'manage_idea':
       return 'product_owner';
     case 'invite_member':
